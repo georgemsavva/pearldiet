@@ -1,0 +1,541 @@
+---
+title: "Pearl study on friut and veg intake and behaviour"
+author: "George Savva"
+date: "December 2024"
+format: html
+self-contained: true
+---
+
+```{r echo=FALSE}
+
+library(polycor)
+library(lavaan)
+library(lavaanPlot)
+library(tidySEM)
+library(ggplot2)
+library(data.table)
+library(ggcorrplot)
+library(readxl)
+
+if(!exists("dat")) {
+  source("makeData.R")
+  dat <- getData()
+  }
+```
+
+## Pairwise correlations
+
+```{r echo=FALSE}
+reverse_levels <- function(f) {
+  if (!is.factor(f)) {
+    stop("Input must be a factor.")
+  }
+  
+  # Reverse levels
+  reversed_levels <- rev(levels(f))
+  
+  # Return a new factor with reversed levels, preserving the ordered status
+  factor(f, levels = reversed_levels, ordered = is.ordered(f))
+}
+
+smallDat <- with(dat,data.frame(AApleasant=as.numeric(AApleasant),
+                                AAconvenient=as.numeric(AAconvenient),
+                                AAenjoyable=as.numeric(AAenjoyable), 
+                                AAinline=as.numeric(AAinline), 
+                                AAimportant=as.numeric(AAimportant), 
+                                EvalAttitude=-as.numeric(EvalAttitude),  
+                                PBCeatingeasy=-as.numeric(PBCeatingeasy),
+                                PBCbuyingcheap=-as.numeric(PBCbuyingcheap),  
+                                PBCbehaviour=-as.numeric(PBCbehaviour),  
+                                PBCpreparingeasy=-as.numeric(PBCpreparingeasy),  
+                                PBCfindingtimeeasy=-as.numeric(PBCfindingtimeeasy),
+                                SNfamily=-as.numeric(SNfamily),
+                                SNfriends=-as.numeric(SNfriends),
+                                SNdoctor=-as.numeric(SNdoctor),
+                                SNadvice=-as.numeric(SNadvice),
+                                RISKcancer = -as.numeric(RISKcancer),
+                                RISKobesity = -as.numeric(RISKobesity),
+                                RISKheart = -as.numeric(RISKheart),
+                                RISKbaby = -as.numeric(RISKbaby),
+                                HSCIconscious = -as.numeric(HSCIconscious),
+                                HSCIconcerned = -as.numeric(HSCIconcerned),
+                                FruitAndVeg
+                                
+))
+
+smallDat2 <- with(dat,data.frame(AApleasant=(AApleasant),
+                                AAconvenient=(AAconvenient),
+                                AAenjoyable=(AAenjoyable), 
+                                AAinline=(AAinline), 
+                                AAimportant=(AAimportant), 
+                                EvalAttitude=reverse_levels(EvalAttitude),  
+                                PBCeatingeasy=reverse_levels(PBCeatingeasy),
+                                PBCbuyingcheap=reverse_levels(PBCbuyingcheap),  
+                                PBCbehaviour=reverse_levels(PBCbehaviour),  
+                                PBCpreparingeasy=reverse_levels(PBCpreparingeasy),  
+                                PBCfindingtimeeasy=reverse_levels(PBCfindingtimeeasy),
+                                SNfamily=reverse_levels(SNfamily),
+                                SNfriends=reverse_levels(SNfriends),
+                                SNdoctor=reverse_levels(SNdoctor),
+                                SNadvice=reverse_levels(SNadvice),
+                                RISKcancer = reverse_levels(RISKcancer),
+                                RISKobesity = reverse_levels(RISKobesity),
+                                RISKheart = reverse_levels(RISKheart),
+                                RISKbaby =reverse_levels (RISKbaby),
+                                HSCIconscious = reverse_levels(HSCIconscious),
+                                HSCIconcerned = reverse_levels(HSCIconcerned),
+                                FruitAndVeg,
+                                age,imd10
+))
+```
+
+Figure X shows the pairwise polychoric correlations between items in the questionnaire, along with polyserial correlation with age, IMD and fruit and vegetable consumption.
+
+*(some items are reverse coded here for neatness, with positive = good)*
+
+```{r fig.width=10, fig.height=10, warning=FALSE}
+## Make a clustered Spearman correlation matrix
+hc <- hetcor(smallDat2)
+hc$correlations |> ggcorrplot( colors = c("red", "white", "blue"), lab=TRUE) + 
+  ggtitle("Polychoric/Polyserial correlation")
+```
+
+This reveals very high correlations between many of the items included in the questionnaire, and moderate correlations between many individual items with fruit and vegetable consumption.
+
+Some items within theoretical scales are particularly strongly correlated, as are many items of affective attitude, health consciousness and perceived behavioural control.
+
+All the items of affective attitude and evaluative attitude were  strongly correlated with each other, and strongly or moderately correlated with aspects of perceived behavioural control.  The perception of cost (PBCbuyingcheap) was not strongly correlated with any of these items.
+
+Questions regarding subjective norms or perception of risk are not strongly correlated with other items. Individuals perception of the effects of fruit and vegetables on heart disease and cancer are almost perfectly correlated, while the relationship with the perception of the risk of obesity is less strong.  Reporting doctors belief correlates moderately with understanding of health risk.  Almost every participant reported the belief that eating more fruit and veg was good for their baby, and so correlations with this item are not reliable.  
+
+Subjective norms were weakly correlated with affective attitude and perception of risk.
+
+Fruit and vegetable intake was correlated with affected and evaluative attitude, with health consciousness and with some apsects of PBC, less so with SN and RISK.
+
+Neither deprivation index or age was strongly correlated with any other item.
+
+## Confirmatory factor analysis
+
+Because of the high correlations between items, a confirmatory factor analysis was used to understand the structure of the dataset and to generate latent factors for further modelling.
+
+Initially, based on theory and the visual inspection of the pairwise correlations, a model was estimated with three factors, corresponding to (1) AA, EA, PBC and HSCI (2) RISK and (3) SN.
+
+Prior to estimating this model we combined RISKheart and RISKcancer into a single variable with three levels, and removed AAenjoyable because of very high correlations.
+
+An initial lack of fit and modification indices from this model (model 1) suggested the following changes:
+
+* A separate factor needed for HSCI (model 2)
+* A separate factor needed for PBC (model 3)
+* Moving AAconvenient into the PBC factor (model 4)
+* Removing PBCcheap from the PBC factor (model 5)
+* Adding HSCIconcerned to the SN factor
+
+```{r echo=FALSE}
+dat$RISKtotal2 <- (as.numeric(smallDat2$RISKheart) + as.numeric(smallDat2$RISKcancer)-3) |> factor(ordered=TRUE)
+
+## Doesn't run?
+CFAmodel0 <- '
+  AAPBC =~ NA*AApleasant + AAconvenient + AAinline + AAimportant + EvalAttitude + HSCIconcerned + HSCIconscious + PBCeatingeasy + PBCfindingtimeeasy + PBCpreparingeasy + PBCbehaviour + PBCbuyingcheap
+  SN =~ NA*SNfamily + SNfriends + SNdoctor
+  RISK =~ NA*RISKtotal2 + RISKobesity
+  SN ~~ 1*SN
+  RISK ~~ 1*RISK
+  AAPBC ~~ 1*AAPBC'
+
+CFAmodel1 <- '
+
+  AAPBC =~ NA*AApleasant + AAconvenient + AAinline + AAimportant + EvalAttitude + HSCIconcerned + HSCIconscious + PBCeatingeasy + PBCfindingtimeeasy + PBCpreparingeasy + PBCbehaviour  + PBCbuyingcheap
+  SN =~ NA*SNfamily + SNfriends + SNdoctor
+  RISK =~ NA*RISKtotal2 + RISKobesity
+
+  SN ~~ 1*SN
+  AAPBC ~~ 1*AAPBC
+  RISK ~~ 1*RISK
+  '
+
+CFAmodel2 <- '
+  AAPBC =~ NA*AApleasant + AAconvenient + AAinline + AAimportant + EvalAttitude + PBCeatingeasy + PBCfindingtimeeasy + PBCpreparingeasy + PBCbehaviour + PBCbuyingcheap
+  HSCI =~ NA*HSCIconcerned + HSCIconscious 
+  SN =~ NA*SNfamily + SNfriends + SNdoctor
+  RISK =~ NA*RISKtotal2 + RISKobesity
+  HSCI ~~ 1*HSCI
+  SN ~~ 1*SN
+  RISK ~~ 1*RISK
+  AAPBC ~~ 1*AAPBC
+  '
+
+CFAmodel3 <- '
+  AAPBC =~ NA*AApleasant + AAconvenient + AAinline + AAimportant + EvalAttitude
+  PBC =~   NA*PBCeatingeasy + PBCfindingtimeeasy + PBCpreparingeasy + PBCbehaviour  + PBCbuyingcheap 
+  HSCI =~  NA*HSCIconcerned + HSCIconscious 
+  SN =~    NA*SNfamily + SNfriends + SNdoctor
+  RISK =~ NA*RISKtotal2 + RISKobesity
+  
+  RISK ~~ 1*RISK
+  PBC ~~ 1*PBC
+  HSCI ~~ 1*HSCI
+  SN ~~ 1*SN
+  AAPBC ~~ 1*AAPBC
+  '
+
+CFAmodel4 <- '
+  AA =~ NA*AApleasant + AAinline + AAimportant + EvalAttitude
+  PBC =~   NA*PBCeatingeasy + PBCfindingtimeeasy + PBCpreparingeasy + PBCbehaviour +  AAconvenient + PBCbuyingcheap
+  HSCI =~  NA*HSCIconcerned + HSCIconscious 
+  SN =~    NA*SNfamily + SNfriends + SNdoctor
+  RISK =~ NA*RISKtotal2 + RISKobesity
+  
+  PBC ~~ 1*PBC
+  HSCI ~~ 1*HSCI
+  SN ~~ 1*SN
+  AA ~~ 1*AA
+  RISK ~~ 1*RISK
+  #PBC ~~ AA
+  '
+
+
+CFAmodel5 <- '
+  AA =~ NA*AApleasant + AAinline + AAimportant + EvalAttitude
+  PBC =~   NA*PBCeatingeasy + PBCfindingtimeeasy + PBCpreparingeasy + PBCbehaviour +  AAconvenient 
+  HSCI =~  NA*HSCIconcerned + HSCIconscious 
+  SN =~    NA*SNfamily + SNfriends + SNdoctor 
+  RISK =~ NA*RISKtotal2 + RISKobesity
+
+  PBC ~~ 1*PBC
+  HSCI ~~ 1*HSCI
+  SN ~~ 1*SN
+  AA ~~ 1*AA
+  RISK ~~ 1*RISK
+  '
+
+CFAmodel6 <- '
+  AA =~ NA*AApleasant + AAinline + AAimportant + EvalAttitude 
+  PBC =~   NA*PBCeatingeasy + PBCfindingtimeeasy + PBCpreparingeasy + PBCbehaviour +  AAconvenient 
+  HSCI =~  NA*HSCIconcerned + HSCIconscious 
+  SN =~    NA*SNfamily + SNfriends + SNdoctor +  HSCIconcerned
+  RISK =~ NA*RISKtotal2 + RISKobesity
+
+  PBC ~~ 1*PBC
+  HSCI ~~ 1*HSCI
+  SN ~~ 1*SN
+  AA ~~ 1*AA
+  RISK ~~ 1*RISK
+  
+
+  '
+
+
+CFAfit1 <- sem(CFAmodel1 , data=dat, missing="pairwise", ordered=TRUE)
+CFAfit2 <- sem(CFAmodel2 , data=dat, missing="pairwise", ordered=TRUE)
+CFAfit3 <- sem(CFAmodel3 , data=dat, missing="pairwise", ordered=TRUE)
+CFAfit4 <- sem(CFAmodel4 , data=dat, missing="pairwise", ordered=TRUE)
+CFAfit5 <- sem(CFAmodel5 , data=dat, missing="pairwise", ordered=TRUE)
+CFAfit6 <- sem(CFAmodel6 , data=dat, missing="pairwise", ordered=TRUE)
+
+summary(CFAfit6)
+
+
+anova(CFAfit5, CFAfit6)
+```
+
+```{r warning=FALSE}
+lavaanExtra::nice_fit(list(CFAfit1,CFAfit2,CFAfit3,CFAfit4,CFAfit5,CFAfit6))
+lavaanExtra::nice_lavaanPlot(CFAfit6,covs = TRUE)
+lavaanExtra::nice_modindices(CFAfit6) |> head()
+
+```
+
+The fit of model 6 was good with no large modification indices reported, and so this model was used to generate scores for each participant corresponding to five underlying factors, AA, PBC, HSCI, RISK and SN.
+
+The significant factor loadings and covariances between these scales are shown in figure above (graph above).
+
+Spearman's correlations between these scales, the other covariates and FV are shown in figure (matrix below).
+
+```{r echo=FALSE}
+## Add the predictions to the dataset
+dat2 <- cbind(dat, predict(CFAfit6, newdata=dat))
+dat2$cheap <- as.numeric(dat2$PBCbuyingcheap)
+setDT(dat2)
+```
+
+```{r warning=FALSE}
+ cor(remove_missing(dat2[ , .(FruitAndVeg, AA, HSCI=-HSCI, PBC=-PBC, RISK, SN=-SN, age, PBCbuyingcheap=-as.numeric(PBCbuyingcheap), imd10)]), method="spearman") |>ggcorrplot( colors = c("red", "white", "blue"), lab=TRUE) + ggtitle("Spearman's correlation")
+
+library(GGally)
+GGally::ggpairs(dat2[ , .(FruitAndVeg, AA, PBC=-PBC, RISK, SN=-SN, HSCI=-HSCI, age, imd10)], 
+                upper = list(continuous = wrap("cor", method = "spearman")))
+
+```
+
+AA is strongly correlated with PBC and HSCI, but HSCI is less strongly correlated with PBC. *This might suggest AA is composed of PBC and HSCI?*.
+
+## Regression modelling
+
+A series of regression models was used to understand the relative contributions of each factor to fruit and vegetable intake.
+
+When considered individually, each scale was significantly linked after adjusting for age and imd10.  The partial $R^2$ explained by each scale independently (after partialling out age and imd10 although the contribution of these is minimal, R2=1.7% combined,p=0.203) was 37% (AA), 35% (PBC), 26% (HSCI), 8% (RISK), 4% (PBCcheap) and 2% (SN).
+
+However there was no significant improvement when including all of the scales together (R-squared = 40%, p=0.4175, F=1.003, df=5) compared to including only AA, suggeting that the four items finally included in the affective attitude scale capture all of the available information regarding FV intake from our battery of assessments.
+
+```{r echo=FALSE}
+# mod all
+modall <- lm(data=dat2 , FruitAndVeg ~ AA + HSCI + PBC + RISK + SN +as.numeric(PBCbuyingcheap)+ age + imd10)
+
+modNULL<-lm(data=dat2 , FruitAndVeg ~ age + imd10 )
+#summary(modall)
+modAA<-lm(data=dat2 , FruitAndVeg ~ AA + age + imd10 )
+modPBC<-lm(data=dat2 , FruitAndVeg ~ PBC + age + imd10) 
+modHSCI <-lm(data=dat2 , FruitAndVeg ~ HSCI  + age + imd10)
+modCheap <-lm(data=dat2 , FruitAndVeg ~ PBCbuyingcheap  + age + imd10) 
+mod_SN <- lm(data=dat2 , FruitAndVeg ~ SN + age + imd10) 
+mod_RISK <- lm(data=dat2 , FruitAndVeg ~ RISK  + age + imd10) 
+
+sensemakr::partial_r2(mod_SN)
+
+anova(modall, modAA)
+
+
+```
+
+## Percieved behavioural control and HSCI
+
+AA can in turn be almost completely explained by PBC and HSCI (R^2=94%).  
+
+*the role of PBCbuyingcheap and RISK on AA are not discussed. after you adjust for PBC and HSCI the behaviour of the other variables is unstable*
+
+```{r }
+## The proportion of AA variance explained by PBC and HSCI
+(r2aa=(lm(data=dat2, AA~PBC+HSCI) |> summary())$r.squared)
+```
+
+* I don't know if this is interesting enough to include *
+
+```{r }
+AAmod <-lm(data=dat2 , AA ~ HSCI +PBC+SN+RISK  + age + imd10)
+AAmoda <-lm(data=dat2 , AA ~ HSCI+SN+RISK  + age + imd10)
+AAmod_PBCHSCI <-lm(data=dat2 , AA ~ HSCI+PBC  + age + imd10)
+AAmodb <-lm(data=dat2 , AA ~ PBC+SN+RISK  + age + imd10)
+AAmodc <-lm(data=dat2 , AA ~ SN  + age + imd10) 
+AAmodd <-lm(data=dat2 , AA ~ RISK  + age + imd10)
+AAmod2 <-lm(data=dat2 , AA ~ SN+RISK  + age + imd10)
+
+modelsummary::modelsummary(
+  list(AAmod, AAmoda, AAmodb,AAmod_PBCHSCI,AAmod2,AAmodc, AAmodd),stars = TRUE)
+
+```
+
+
+Table below shows the extent to which FV is explained by combinations of AA, PBC and HSCI.  We equally account for the variation in FV either by AA or by a combination of both PBC and HSCI.  The model with the lowest AIC includes only AA.
+
+```{r }
+modPBC_HSCI<-lm(data=dat2 , FruitAndVeg ~ PBC + HSCI + age + imd10 )
+modPBC_HSCI_AA<-lm(data=dat2 , FruitAndVeg ~ AA+PBC + HSCI + age + imd10 ) 
+
+#anova(modall, modPBC_HSCI, modPBC)
+#anova(modPBC_HSCI_AA, modPBC_HSCI, modPBC)
+list("HSCI"=modHSCI,"PBC"=modPBC,"HSCI+PBC"=modPBC_HSCI,  "AA"=modAA, "HSCI+PBC+AA"=modPBC_HSCI_AA ) |> 
+  modelsummary::modelsummary(stars = TRUE,coef_map = c("HSCI",  "PBC","AA", "imd10", "age"))
+```
+## Effect of subjective norms and perception of risk
+
+The models below show that the effect of SN is almost completely accounted for by either HSCI,PBC, or RISK.  But neither the effect of RISK, PBC or HSCI is reduced by adjusting for SN.
+
+```{r }
+(modHSCI_SN <-lm(data=dat2 , FruitAndVeg ~ HSCI +SN  + age + imd10) )
+(modRISK_SN <-lm(data=dat2 , FruitAndVeg ~ RISK +SN  + age + imd10) )
+(modPBC_SN <-lm(data=dat2 , FruitAndVeg ~ PBC +SN  + age + imd10) )
+
+modelsummary::modelsummary(list(
+  "SN"=mod_SN,
+  "HSCI"=modHSCI,
+  "PBC"=modPBC, 
+  "RISK"=mod_RISK, 
+  "SN+RISK"=modRISK_SN, 
+  "SN+HSCI"=modHSCI_SN, 
+  "SN+PBC"=modPBC_SN  
+), stars=TRUE,
+  coef_map = c("SN","HSCI", "PBC","RISK","imd10", "age"))
+
+```
+
+On the other hand, the effect of RISK is accounted for only by HSCI, but only partially by PBC.
+
+```{r }
+modHSCI_RISK <-lm(data=dat2 , FruitAndVeg ~ HSCI +RISK  + age + imd10) 
+modPBC_RISK <-lm(data=dat2 , FruitAndVeg ~ PBC +RISK  + age + imd10) 
+# modHSCI_RISK |> summary()
+# modPBC_RISK |> summary()
+# mod_RISK|> summary()
+# modPBC |> summary()
+# modHSCI |> summary()
+modelsummary::modelsummary(list(
+  "RISK"=mod_RISK, 
+  "SN"=mod_SN,
+  "HSCI"=modHSCI,
+  "PBC"=modPBC, 
+  "RISK+SN"=modRISK_SN, 
+  "RISK+HSCI"=modHSCI_RISK, 
+  "RISK+PBC"=modPBC_RISK  
+), stars=TRUE,
+  coef_map = c("RISK","SN","HSCI", "PBC","imd10", "age"))
+
+```
+
+## Non-linearity and Interaction effects
+
+The path model above assumes linear relationships between each of the factors, and does not incorporate interaction effects.
+
+In fact the relationship between AA and FV in our data is slightly non-linear, with a shallower curve toward the higher end of the AA factor (p=0.039 for a model incorporating a quadratic term).
+
+```{r nonlinear}
+dat2$preds <- lm(data=dat2,FruitAndVeg ~ AA+I(AA^2) ) |> predict()
+lm(data=dat2,FruitAndVeg ~ AA+I(AA^2) ) |> anova()
+ggplot(dat2) + aes(y=FruitAndVeg, x=AA) + geom_point() + geom_line(aes(y=preds))
+
+```
+
+There is a robust and significant interaction between AA and imd10 on fruit and vegetable intake (p<0.001 for interaction effect).  Although there was no main effect of IMD, the effect of AA was significantly more pronounced in more deprived areas (figure below).
+
+Similar interactions are seen between other scales and imd10 (not shown), suggesting that in less deprived areas fruit and vegetable intake is more determined by AA, PBC,  HSCI etc than it is in wealthier areas.
+
+There were no interactions with age.
+
+```{r }
+modaa22_aa_by_cheap <- lm(data=dat2, FruitAndVeg ~ AA*imd10+ age)
+modaa22_aa <- lm(data=dat2, FruitAndVeg ~ AA+ age)
+modaa22_aa_by_cheap |> summary()
+dat2[ , imd3 := ifelse(imd10<6, 1, ifelse(imd10<8 ,2,3))]
+ggplot(dat2[!is.na(imd10)]) + aes(y=FruitAndVeg, x=AA, col=factor(imd3)) + geom_point() + stat_smooth(method="lm") + facet_wrap(~imd3) + 
+  scale_color_discrete(labels=c("Most deprived (1-5)", "Middle (6-8)", "Least deprived (9-10)"), name="Deprivation index")
+
+
+```
+
+## Path model
+
+Our final path model is shown below.  The fit indices of this model are very good ($\chi^2$=11.0, df=9, p=0.278, RMSEA=0.034, cfi=0.998), and there are no substantial modification indices.
+
+
+
+```{r }
+
+pathmod <- "AA ~ a*HSCI + b*PBC + c*RISK +  b2*cheap
+HSCI ~ e*RISK 
+RISK ~ r*SN
+PBC ~ f*SN + f2*RISK + f3*cheap
+FruitAndVeg ~ g*AA 
+HSCI~~PBC
+"
+dat2$AAbyIMD = dat2$AA * dat2$imd10
+
+pathmod2 <- "AA ~ a*HSCI + b*PBC + c*RISK +  b2*cheap
+HSCI ~ e*RISK 
+RISK ~ r*SN
+PBC ~ f*SN + f2*RISK + f3*cheap
+FruitAndVeg ~ g*AA + g2*AAbyIMD
+HSCI~~PBC
+"
+
+fitpath <- sem(pathmod, data=dat2)
+fitpath2 <- sem(pathmod2, data=dat2)
+
+#anova(fitpath,fitpath2)
+
+sumpath=summary(fitpath,              # name of fitted model object 
+        fit.measures=TRUE,   # request model fit indices
+        standardized=TRUE,   # request standardized estimates
+        rsquare=TRUE)        # request R-squared estimates
+lavaanExtra::nice_lavaanPlot(fitpath, covs = TRUE)
+#lavaanExtra::nice_modindices(fitpath)
+# lavaanExtra::nice_tidySEM(fitpath)
+lavaanExtra::nice_fit(fitpath)
+
+## Show the R2 for each of the individual models.
+r2=sumpath$pe |> subset(op=="r2") |> subset(select = c("lhs","est"))
+r2
+
+```
+
+*So, this is a path model that fits well.  It's not to say its the only path model that would fit!.  The path model doesn't incorporate the interaction with imd but I'm not sure how to do that, or whether it is necessary.*
+
+The R-squared for affective attitude is 0.945, which means that it is almost completely explained by the other factors.  
+
+
+## Lasso regression
+
+Lasso regression with bootstrapped confidence intervals was performed to attempt to identify individual items that were consistently associated with fruit and vegetable intake.
+
+The only item that was consistently included in bootstrap replicates was "convenience" (which we included as element of the PBC scale), but this in itself did not explain a large degree of the variation in intake.  So while we know that the items we measured can explain a substantial proportion of reported fruit and veg intake, owing to the high collinearity it is difficult to identify which specific items represent the most important aspects.
+
+
+```{r echo=FALSE }
+
+library(glmnet)
+library(boot)
+
+## I would like this to return the importance and the coefficients.
+boot_fun <- function(data, indices, preds) {
+  data_resampled <- data[indices, ]
+  ridge_model <- cv.glmnet(as.matrix(data_resampled[, ..preds]),data_resampled$FruitAndVeg, alpha = 1)
+  coefs <- coef(ridge_model, s = "lambda.min")  
+  c2 =  as.matrix(coefs)
+  rownames(c2) = rownames(coefs)
+  c2
+}
+predictors <- names(smallDat2)[1:21]
+predictors=setdiff(predictors, "RISKcancer")
+predictors=setdiff(predictors, "AAenjoyable")
+
+sd2 = remove_missing(smallDat)
+setDT(sd2)
+boot_results <- boot(data=sd2, boot_fun, R = 100,  preds=predictors)
+boot_dt = summary(boot_results) |> as.data.frame()
+
+ci_results <- lapply(1:ncol(boot_results$t), function(i) {boot.ci(boot_results, type = "perc", index = i)})
+ci_table <- data.frame(
+  CI_Lower = sapply(ci_results, function(ci) ci$perc[4]),
+  CI_Upper = sapply(ci_results, function(ci) ci$perc[5]) 
+)
+ci_table$var=c("Intercept",predictors)
+ci_table$t0=boot_results$t0
+ci_table$bootMed = boot_dt$bootMed
+
+
+```
+
+Lasso coefficients and 95% CIs:
+
+```{r }
+ci_table
+ggplot(ci_table[-1,])+ 
+  aes(x=var, ymax=CI_Upper, ymin=CI_Lower,y=bootMed) + coord_flip() + 
+  geom_point()+geom_errorbar() + theme_bw() + geom_hline(aes(yintercept=0)) + 
+  ggtitle("Lasso coefficients with bootstrapped 95% CIs", "This doesn't tell you much!")
+```
+
+
+## Conclusions
+
+There is a clear factor structure in our data, although the factors are themselves very correlated.
+
+Fruit and veg intake can be explained by affective attitude.
+
+This is turn can be explained by HSCI and PBC.
+
+The significant effects of SN, RISK and ther perception of cost can be explained by their associations with these factors.
+
+There may be less effect of AA (and by extension many of the variables we examines) with IMD, although the average intake reported does not vary with IMD or age.
+
+The effects of specific items are very difficult to disentagle because of the collinearity.
+
+## Limitations
+
+Self-report of FV might be biased, and differentially biased with some of the other measured variables or demographics.
+
+
+
+## Data availability
+
+(we should prepare a data file that can be published with the paper, along with the R code, just including the dataset used in this pub would be enough.)
+
+Anonymised data including individual items, demographics factors and predicted factor levels is available at ...
